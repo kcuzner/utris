@@ -22,8 +22,8 @@ FUSES = {
 #endif
 
 static uint8_t display[8] = {
-    0x80,
-    0xC0,
+    0x82,
+    0xC6,
     0xE0,
     0xF0,
     0xF8,
@@ -36,6 +36,12 @@ int main(void)
 {
     display_init(display);
 
+    TCCR0A = 0;
+    TCCR0B = (1<<CS02) | (1<<CS00); //clock source is clk/64
+    TIMSK0 = (1<<TOIE0); //enable all interrupts for the timer
+
+    sei();
+
     while(1)
     {
         display_write_row();
@@ -43,3 +49,8 @@ int main(void)
 
     return 0;
 }
+
+ISR(TIM0_OVF_vect)
+{
+}
+

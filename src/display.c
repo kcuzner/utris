@@ -11,7 +11,6 @@
 
 static uint8_t *display_buffer;
 static uint8_t current_row = 0;
-static uint8_t row_mask = 0x7F;
 
 void display_init(uint8_t *buffer)
 {
@@ -23,7 +22,6 @@ void display_set_buffer(uint8_t *buffer)
 {
     display_buffer = buffer;
     current_row = 0;
-    row_mask = 0x7F;
 }
 
 static void display_shift_byte(uint8_t byte)
@@ -43,10 +41,10 @@ static void display_shift_byte(uint8_t byte)
 
 void display_write_row(void)
 {
-    //shift out buffer first, row mask last
-    uint8_t row = display_buffer[current_row];
-    display_shift_byte(row);
-    display_shift_byte(row_mask);
+    //shift out columns first, row mask last
+    uint8_t columns = display_buffer[current_row];
+    display_shift_byte(~columns); //note that the columns are on the cathodes
+    display_shift_byte(1 << current_row);
 
     //toggle STCP
     PORTB |= _BV(DISPLAY_STCP_PIN);
@@ -54,9 +52,5 @@ void display_write_row(void)
 
     current_row++;
     current_row &= 0x7;
-    row_mask >>= 1;
-    row_mask |= 0x80;
-    if (row_mask == 0xFF)
-        row_mask = 0x7F;
 }
 

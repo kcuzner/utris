@@ -2,6 +2,7 @@
  * 1-Wire LED
  */
 
+#include "utris.h"
 #include "display.h"
 
 #include <avr/pgmspace.h>
@@ -21,24 +22,15 @@ FUSES = {
 #error "No fuses defined for selected processor"
 #endif
 
-static uint8_t display[8] = {
-    0x82,
-    0xC6,
-    0xE0,
-    0xF0,
-    0xF8,
-    0xFC,
-    0xFE,
-    0xFF
-};
-
 int main(void)
 {
-    display_init(display);
+    utris_init();
 
     TCCR0A = 0;
-    TCCR0B = (1<<CS02) | (1<<CS00); //clock source is clk/64
     TIMSK0 = (1<<TOIE0); //enable all interrupts for the timer
+    TCCR0B = (1<<CS02); //clock source is clk/256
+
+    utris_start();
 
     sei();
 
@@ -52,5 +44,6 @@ int main(void)
 
 ISR(TIM0_OVF_vect)
 {
+    utris_tick();
 }
 

@@ -73,15 +73,15 @@ static const uint8_t PROGMEM * const pieceMap[] = {
     &pieces[1 + (PIECE_SIZE + 1)*4]
 };
 
-#define INIT_POSX 3;
-#define INIT_POSY 0;
+#define INIT_POSX 3
+#define INIT_POSY 0
+#define INIT_LEVEL 0x80
 
-static uint8_t level = 0x80;
+static uint8_t level = INIT_LEVEL;
 static uint8_t posX = INIT_POSX;
 static uint8_t posY = INIT_POSY;
 static uint8_t piece;
 static uint8_t orientation;
-static uint16_t rows;
 
 void utris_init(void)
 {
@@ -154,7 +154,10 @@ static uint8_t utris_check_collisions(uint8_t *a, uint8_t *b)
 
 void utris_start(void)
 {
-    posX = posY = rows = 0;
+    utris_clear(board);
+    posX = INIT_POSX;
+    posY = INIT_POSY;
+    level = INIT_LEVEL;
     piece = 0;
 }
 
@@ -169,48 +172,26 @@ void utris_tick(void)
 
     uint8_t *buf = display[scratchpad];
     utris_clear(buf);
-    utris_try_blit_piece(buf);
-    display_set_buffer(buf);
-    posX++;
-    if (posX == 7)
-    {
-        posX = 0;
-        posY++;
-        if (posY == 7)
-        {
-            posY = 0;
-        }
-    }
-    orientation++;
-    orientation &= 0x3;
-    scratchpad ^= 1;
 
-    /*if (count == level)
+    //attempt to move the piece downwards
+    posY++;
+    if (!utris_try_blit_piece(buf) | !utris_check_collisions(board, buf))
     {
-        count = 0xFF;
-        uint8_t *buf = display[scratchpad];
+        posY = INIT_POSY;
+        /*
+        //reverse move, add it to the background
         utris_clear(buf);
-        //attempt to move the piece downwards
-        posY++;
-        if (!utris_try_blit_piece(buf) || !utris_check_collisions(board, buf))
+        posY--;
+        if (!utris_try_blit_piece(board))
         {
-            //reverse move, add it to the background
-            utris_clear(buf);
-            posY--;
-            if (!utris_try_blit_piece(buf))
-            {
-                //game over!
-                posX = INIT_POSX;
-                posY = INIT_POSY;
-                utris_clear(board);
-                level = 0;
-                return;
-            }
-            utris_blit(board, buf, 8);
-        }
-        display_set_buffer(display[scratchpad]);
-        scratchpad ^= 1;
-    }*/
+            //game over!
+            utris_start();
+            return;
+        }*/
+    }
+    //utris_blit(buf, board, 8);
+    display_set_buffer(buf);
+    scratchpad ^= 1;
 }
 
 void utris_command(UtrisCommand command)

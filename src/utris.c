@@ -73,15 +73,30 @@ static const uint8_t PROGMEM * const pieceMap[] = {
     &pieces[1 + (PIECE_SIZE + 1)*4]
 };
 
-#define INIT_POSX 3
-#define INIT_POSY 0
+#define INIT_POS 0x03
+#define INIT_POS_NEWPIECE 0xF3 //preempt a y+1 move
 #define INIT_LEVEL 0x80
 
-static uint8_t level = INIT_LEVEL;
-static uint8_t posX = INIT_POSX;
-static uint8_t posY = INIT_POSY;
-static uint8_t piece;
-static uint8_t orientation;
+typedef union {
+    uint8_t all;
+    struct {
+        unsigned x:4; //avr-gcc packs this lsb-first
+        unsigned y:4;
+    };
+} Point;
+
+typedef union {
+    uint8_t all;
+    struct {
+        unsigned index:4;
+        unsigned orientation:4;
+    };
+} Piece;
+
+static uint8_t level;
+static Point pos;
+static Point lastPos;
+static Piece piece; //note: compressing the piece values into a struct may not yield good memory benefits
 
 void utris_init(void)
 {
@@ -114,26 +129,26 @@ static uint8_t piece_buffer[PIECE_SIZE];
  */
 static uint8_t utris_try_blit_piece(uint8_t *dest)
 {
-    uint8_t *pieceStart = (uint8_t *)pgm_read_word(&pieceMap[piece]);
-    uint8_t *orientationStart = pieceStart + 1 + ((PIECE_SIZE + 1) * orientation);
+    uint8_t *pieceStart = (uint8_t *)pgm_read_word(&pieceMap[piece.index]);
+    uint8_t *orientationStart = pieceStart + 1 + ((PIECE_SIZE + 1) * piece.orientation);
     uint8_t size = pgm_read_byte(&orientationStart[0]);
     uint8_t width = size >> 4;
     uint8_t height = size & 0x0F;
-    if (posX + width > 8)
+    if (pos.x + width > 8)
         return 0;
-    if (posX > 8) //catches negative numbers
+    if (pos.x > 8) //catches negative numbers
         return 0;
-    if (posY + height > 8)
+    if (pos.y + height > 8)
         return 0;
-    if (posY > 8) //catches negative numbers
+    if (pos.y > 8) //catches negative numbers
         return 0;
 
     for (uint8_t i = 0; i < PIECE_SIZE; i++)
     {
-        piece_buffer[i] = pgm_read_byte(&orientationStart[1+i]) << posX;
+        piece_buffer[i] = pgm_read_byte(&orientationStart[1+i]) << pos.x;
     }
 
-    utris_blit(&dest[posY], piece_buffer, PIECE_SIZE);
+    utris_blit(&dest[pos.y], piece_buffer, PIECE_SIZE);
 
     return 1;
 }
@@ -155,10 +170,9 @@ static uint8_t utris_check_collisions(uint8_t *a, uint8_t *b)
 void utris_start(void)
 {
     utris_clear(board);
-    posX = INIT_POSX;
-    posY = INIT_POSY;
+    pos.all = lastPos.all = INIT_POS;
     level = INIT_LEVEL;
-    piece = 0;
+    piece.all = 0;
 }
 
 void utris_tick(void)
@@ -173,25 +187,33 @@ void utris_tick(void)
     uint8_t *buf = display[scratchpad];
     utris_clear(buf);
 
-    //attempt to move the piece downwards
-    posY++;
-    if (!utris_try_blit_piece(buf) | !utris_check_collisions(board, buf))
+    //draw the piece
+    if (!utris_try_blit_piece(buf) || !utris_check_collisions(board, buf))
     {
-        posY = INIT_POSY;
-        /*
-        //reverse move, add it to the background
+        //it doesn't fit where we want it, so it gets added to the background
+        pos = lastPos;
         utris_clear(buf);
-        posY--;
-        if (!utris_try_blit_piece(board))
+        if (!utris_try_blit_piece(buf) || !utris_check_collisions(board, buf))
         {
-            //game over!
+            //can't add to background? Game over!
             utris_start();
-            return;
-        }*/
+            pos.y = 0xF;
+        }
+        else
+        {
+            //actually add it to the background
+            utris_blit(board, buf, 8);
+            //it fit in the background, so get a new piece
+            pos.all = lastPos.all = INIT_POS_NEWPIECE;
+        }
     }
-    //utris_blit(buf, board, 8);
+    utris_blit(buf, board, 8);
     display_set_buffer(buf);
     scratchpad ^= 1;
+
+    //move the piece down 1 as our next command
+    lastPos.y = pos.y;
+    pos.y++;
 }
 
 void utris_command(UtrisCommand command)

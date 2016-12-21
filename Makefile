@@ -63,7 +63,7 @@ $(BINDIR)/fuses.bin: $(BINDIR)/$(PROJECT).elf
 $(BINDIR)/$(PROJECT).elf: $(OBJ)
 	@$(MKDIR) -p $(dir $@)
 	$(CC) $(OBJ) $(LDFLAGS) -o $@
-	$(OBJDUMP) -d $(BINDIR)/$(PROJECT).elf > $(BINDIR)/$(PROJECT).lst
+	$(OBJDUMP) -D $(BINDIR)/$(PROJECT).elf > $(BINDIR)/$(PROJECT).lst
 	$(SIZE) -C --mcu=$(MCU) $(BINDIR)/$(PROJECT).elf
 
 $(OBJDIR)/%.o: $(SRCDIR)/%.c

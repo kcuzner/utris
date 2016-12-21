@@ -22,6 +22,10 @@ FUSES = {
 #error "No fuses defined for selected processor"
 #endif
 
+#define FLAG_UTRIS_TICK 0x1
+
+static uint8_t flags;
+
 int main(void)
 {
     utris_init();
@@ -36,6 +40,11 @@ int main(void)
 
     while(1)
     {
+        if (flags & FLAG_UTRIS_TICK)
+        {
+            utris_tick();
+        }
+        flags = 0;
         display_write_row();
     }
 
@@ -44,6 +53,6 @@ int main(void)
 
 ISR(TIM0_OVF_vect)
 {
-    utris_tick();
+    flags |= FLAG_UTRIS_TICK;
 }
 

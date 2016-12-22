@@ -11,18 +11,12 @@
 #include <util/atomic.h>
 
 static uint8_t *display_buffer;
-static uint8_t *next_buffer;
 static uint8_t current_row = 0;
 
 void display_init(uint8_t *buffer)
 {
     DDRB |= _BV(DISPLAY_DS_PIN) | _BV(DISPLAY_STCP_PIN) | _BV(DISPLAY_SHCP_PIN);
-    display_set_buffer(buffer);
-}
-
-void display_set_buffer(uint8_t *buffer)
-{
-    next_buffer = buffer;
+    display_buffer = buffer;
 }
 
 static void display_shift_byte(uint8_t byte)
@@ -53,16 +47,5 @@ void display_write_row(void)
 
     current_row++;
     current_row &= 0x7;
-    cli();
-    if (current_row == 0 && next_buffer)
-    {
-        display_buffer = next_buffer;
-        /**
-         * Note that we could clear the next buffer value to avoid doing this
-         * step in every frame after the first call to set_buffer, but that
-         * adds several bytes to the program size and isn't strictly necesary.
-         */
-    }
-    sei();
 }
 

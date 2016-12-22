@@ -26,14 +26,14 @@ uint8_t display[8];
 
 /**
  * Format:
- * 1 Byte: Number of orientations
+ * 1 Byte: orientation mask
  * ---For each orientation:
  *   1 Byte: [7:4] Width of piece, [3:0] Height of piece
  *   PIECE_SIZE Bytes: Orientation bitmap, origin LSB
+ *
+ * Every piece must have four orientations!
  */
 static const uint8_t PROGMEM pieces[] = {
-    //L-tromino
-    0x4,
     //L-tromino, orientation 1
     0x22,
     0x01,
@@ -54,8 +54,16 @@ static const uint8_t PROGMEM pieces[] = {
     0x03,
     0x01,
     0x00,
-    //I-tromino
-    0x2,
+    //I-tromino, orientation 1
+    0x13,
+    0x01,
+    0x01,
+    0x01,
+    //I-tromino, orientation 2
+    0x31,
+    0x07,
+    0x00,
+    0x00,
     //I-tromino, orientation 1
     0x13,
     0x01,
@@ -70,7 +78,7 @@ static const uint8_t PROGMEM pieces[] = {
 
 static const uint8_t PROGMEM * const pieceMap[] = {
     &pieces[0],
-    &pieces[1 + (PIECE_SIZE + 1)*4]
+    &pieces[(PIECE_SIZE + 1)*4]
 };
 
 #define INIT_POS 0x03
@@ -80,11 +88,11 @@ static const uint8_t PROGMEM * const pieceMap[] = {
 typedef enum { COLLISION_NONE, COLLISION_BOTTOM, COLLISION_SIDE } CollisionDirection;
 
 typedef union {
-    uint8_t all;
+    uint16_t all;
     struct {
-        unsigned x:3; //avr-gcc packs this lsb-first
-        unsigned y:3;
-        unsigned o:2;
+        unsigned x:4; //avr-gcc packs this lsb-first
+        unsigned y:4;
+        uint8_t o;
     };
 } Point;
 
@@ -118,10 +126,12 @@ static void utris_blit(uint8_t *dest, uint8_t *src, uint8_t len)
 static CollisionDirection utris_check_piece_bounds(void)
 {
     uint8_t *pieceStart = (uint8_t *)pgm_read_word(&pieceMap[piece]);
-    uint8_t *orientationStart = pieceStart + 1 + ((PIECE_SIZE + 1) * pos.o);
+    uint8_t *orientationStart = pieceStart + ((PIECE_SIZE + 1) * pos.o);
     uint8_t size = pgm_read_byte(&orientationStart[0]);
     uint8_t width = size >> 4;
     uint8_t height = size & 0x0F;
+    //the following takes advantage of 0-1=0xF > 8. Will not work if x or y
+    //is less than 4 bits wide.
     if (pos.x + width > 8)
         return COLLISION_SIDE;
     if (pos.y + height > 8)
@@ -137,7 +147,7 @@ static uint8_t piece_buffer[PIECE_SIZE];
 static void utris_blit_piece(uint8_t *dest)
 {
     uint8_t *pieceStart = (uint8_t *)pgm_read_word(&pieceMap[piece]);
-    uint8_t *orientationStart = pieceStart + 1 + ((PIECE_SIZE + 1) * pos.o);
+    uint8_t *orientationStart = pieceStart + ((PIECE_SIZE + 1) * pos.o);
 
     for (uint8_t i = 0; i < PIECE_SIZE; i++)
     {
@@ -162,12 +172,33 @@ static uint8_t utris_check_collisions(uint8_t *a, uint8_t *b)
     return 1;
 }
 
+static __attribute__ ((noinline)) void utris_new_piece(void)
+{
+    pos.all = lastPos.all = INIT_POS;
+    piece ^= 1;
+}
+
+static void utris_row_reduce(void)
+{
+    for (int8_t i = 0; i < 8; i++)
+    {
+        if (board[i] == 0xFF)
+        {
+            board[0] = 0;
+            for (int8_t j = i; j > 0; j--)
+            {
+                board[j] = board[j-1];
+            }
+            level++;
+        }
+    }
+}
+
 void utris_start(void)
 {
     utris_clear(board);
-    pos.all = lastPos.all = INIT_POS;
+    utris_new_piece();
     level = INIT_LEVEL;
-    piece = 0;
 }
 
 void utris_tick(void)
@@ -203,7 +234,8 @@ void utris_tick(void)
                 //actually add it to the background
                 utris_blit(board, buf, 8);
                 //it fit in the background, so get a new piece
-                pos.all = lastPos.all = INIT_POS;
+                utris_new_piece();
+                utris_row_reduce();
             }
         }
     }

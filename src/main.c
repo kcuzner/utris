@@ -31,7 +31,40 @@ FUSES = {
 
 static uint8_t flags;
 
-extern uint8_t display[2][8];;
+extern uint8_t display[2][8];
+
+static inline void evaluate_adc_buttons(void)
+{
+    static uint8_t flagsMask = 0;
+    //if (!(ADCSRA & _BV(ADIF)))
+    //    return;
+
+    //ADCSRA |= _BV(ADIF);
+    uint8_t val = ADCH >> 5;
+
+    //the following magic numbers were tuned to my resistor values
+    if (val == 0x7)
+    {
+        flags |= flagsMask;
+        flagsMask = 0;
+    }
+    else if (val == 0x6)
+    {
+        flagsMask |= FLAG_DOWN;
+    }
+    else if (val == 0x4)
+    {
+        flagsMask |= FLAG_ROTATE;
+    }
+    else if (val == 0x1)
+    {
+        flagsMask |= FLAG_LEFT;
+    }
+    else if (val == 0x0)
+    {
+        flagsMask |= FLAG_RIGHT;
+    }
+}
 
 int main(void)
 {
@@ -48,13 +81,14 @@ int main(void)
     ADMUX = _BV(ADLAR) | _BV(MUX1); //ADC2 (PB4) is our input
     ADCSRB = 0; //free-running mode
     DIDR0 = _BV(ADC2D); //disable digital buffer on PB4
-    ADCSRA = _BV(ADEN) | _BV(ADSC) | _BV(ADATE) | _BV(ADIE); //enabled, interrupts, start conversion, auto trigger
+    ADCSRA = _BV(ADEN) | _BV(ADSC) | _BV(ADATE);// | _BV(ADIE); //enabled, interrupts, start conversion, auto trigger
 
     sei();
 
     while(1)
     {
         cli();
+        evaluate_adc_buttons();
         UtrisCommand command = UTRIS_NONE;
         if (flags & FLAG_RIGHT)
             command = UTRIS_RIGHT;
@@ -83,8 +117,7 @@ ISR(TIM0_OVF_vect)
     flags |= FLAG_TICK;
 }
 
-#define BTN_INTERVAL (0x7F/5)
-ISR(ADC_vect)
+/*ISR(ADC_vect)
 {
     static uint8_t flagsMask = 0;
     uint8_t val = ADCH >> 5;
@@ -109,5 +142,5 @@ ISR(ADC_vect)
     {
         flagsMask |= FLAG_RIGHT;
     }
-}
+}*/
 

@@ -11,7 +11,15 @@ wasteful).
 
 ## Schematic
 
-This is probably my least specific schematic I've ever made:
+This is probably my least specific schematic I've ever made. Some notes:
+
+ * All output enables are asserted (tie to ground for most chips)
+ * All memory reset pins are de-asserted (tie to VCC for most chips)
+ * All chips are powered from 5V
+ * All chips have their very own decoupling capacitor. Probably a little
+   overboard, but don't forget it for the microcontroller.
+ * I didn't include the programming connections because that's fairly easy to
+   google.
 
 ![Schematic](/doc/Schematic.jpg?raw=true "Schematic")
 

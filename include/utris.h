@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 
-typedef enum { UTRIS_ROTATE, UTRIS_LEFT, UTRIS_RIGHT, UTRIS_DOWN } UtrisCommand;
+typedef enum { UTRIS_NONE, UTRIS_ROTATE, UTRIS_LEFT, UTRIS_RIGHT, UTRIS_DOWN } UtrisCommand;
 
 void utris_init(void);
 

@@ -15,12 +15,12 @@
 static uint8_t board[8];
 
 /**
- * Double buffered display
+ * Single-buffered display. We have a low rate game, so it shouldn't get
+ * in the way.
  *
- * The unused buffer is used as a scratchpad for potential moves
+ * Double buffering was a 9-byte RAM investment with little return.
  */
-static uint8_t display[2][8];
-static uint8_t scratchpad;
+uint8_t display[8];
 
 #define PIECE_SIZE 3
 
@@ -77,31 +77,25 @@ static const uint8_t PROGMEM * const pieceMap[] = {
 #define INIT_POS_NEWPIECE 0xF3 //preempt a y+1 move
 #define INIT_LEVEL 0x80
 
-typedef union {
-    uint8_t all;
-    struct {
-        unsigned x:4; //avr-gcc packs this lsb-first
-        unsigned y:4;
-    };
-} Point;
+typedef enum { COLLISION_NONE, COLLISION_BOTTOM, COLLISION_SIDE } CollisionDirection;
 
 typedef union {
     uint8_t all;
     struct {
-        unsigned index:4;
-        unsigned orientation:4;
+        unsigned x:3; //avr-gcc packs this lsb-first
+        unsigned y:3;
+        unsigned o:2;
     };
-} Piece;
+} Point;
 
 static uint8_t level;
 static Point pos;
 static Point lastPos;
-static Piece piece; //note: compressing the piece values into a struct may not yield good memory benefits
+static uint8_t piece;
 
 void utris_init(void)
 {
-    display_init(display[0]);
-    scratchpad = 1;
+    display_init(display);
 }
 
 static void utris_clear(uint8_t *buf)
@@ -121,27 +115,29 @@ static void utris_blit(uint8_t *dest, uint8_t *src, uint8_t len)
     }
 }
 
-static uint8_t piece_buffer[PIECE_SIZE];
-/**
- * Attempts to blit the piece onto the passed desination buffer
- *
- * Returns 0 if the piece will not fit fully within the buffer
- */
-static uint8_t utris_try_blit_piece(uint8_t *dest)
+static CollisionDirection utris_check_piece_bounds(void)
 {
-    uint8_t *pieceStart = (uint8_t *)pgm_read_word(&pieceMap[piece.index]);
-    uint8_t *orientationStart = pieceStart + 1 + ((PIECE_SIZE + 1) * piece.orientation);
+    uint8_t *pieceStart = (uint8_t *)pgm_read_word(&pieceMap[piece]);
+    uint8_t *orientationStart = pieceStart + 1 + ((PIECE_SIZE + 1) * pos.o);
     uint8_t size = pgm_read_byte(&orientationStart[0]);
     uint8_t width = size >> 4;
     uint8_t height = size & 0x0F;
     if (pos.x + width > 8)
-        return 0;
-    if (pos.x > 8) //catches negative numbers
-        return 0;
+        return COLLISION_SIDE;
     if (pos.y + height > 8)
-        return 0;
-    if (pos.y > 8) //catches negative numbers
-        return 0;
+        return COLLISION_BOTTOM;
+
+    return COLLISION_NONE;
+}
+
+static uint8_t piece_buffer[PIECE_SIZE];
+/**
+ * Blits the pice onto the passed buffer
+ */
+static void utris_blit_piece(uint8_t *dest)
+{
+    uint8_t *pieceStart = (uint8_t *)pgm_read_word(&pieceMap[piece]);
+    uint8_t *orientationStart = pieceStart + 1 + ((PIECE_SIZE + 1) * pos.o);
 
     for (uint8_t i = 0; i < PIECE_SIZE; i++)
     {
@@ -149,12 +145,11 @@ static uint8_t utris_try_blit_piece(uint8_t *dest)
     }
 
     utris_blit(&dest[pos.y], piece_buffer, PIECE_SIZE);
-
-    return 1;
 }
 
 /**
- * Checks for collisions between the two passed 8-byte buffers
+ * Checks for collisions between the two passed 8-byte buffers,
+ * returning 0 if there are collisions and 1 if there is no intersection
  */
 static uint8_t utris_check_collisions(uint8_t *a, uint8_t *b)
 {
@@ -172,51 +167,78 @@ void utris_start(void)
     utris_clear(board);
     pos.all = lastPos.all = INIT_POS;
     level = INIT_LEVEL;
-    piece.all = 0;
+    piece = 0;
 }
 
 void utris_tick(void)
 {
     static uint8_t count = 0;
 
-    if (count-- != level)
-        return;
-
-    count = 0xFF;
-
-    uint8_t *buf = display[scratchpad];
+    uint8_t *buf = display;
     utris_clear(buf);
 
-    //draw the piece
-    if (!utris_try_blit_piece(buf) || !utris_check_collisions(board, buf))
+    //if the piece is out of bounds on the bottom or collides with the
+    //board, then the piece at its previous position is added to the
+    //board.
+    //
+    //if the piece is out of bounds on the side then we just reverse the
+    //position and render it there.
+
+    CollisionDirection dir = utris_check_piece_bounds();
+    utris_blit_piece(buf); //yes it could have been blitted outside
+    if (dir != COLLISION_NONE || !utris_check_collisions(board, buf))
     {
-        //it doesn't fit where we want it, so it gets added to the background
         pos = lastPos;
         utris_clear(buf);
-        if (!utris_try_blit_piece(buf) || !utris_check_collisions(board, buf))
+        utris_blit_piece(buf);
+        if (dir != COLLISION_SIDE)
         {
-            //can't add to background? Game over!
-            utris_start();
-            pos.y = 0xF;
-        }
-        else
-        {
-            //actually add it to the background
-            utris_blit(board, buf, 8);
-            //it fit in the background, so get a new piece
-            pos.all = lastPos.all = INIT_POS_NEWPIECE;
+            if (!utris_check_collisions(board, buf))
+            {
+                //can't add to background? Game over!
+                utris_start();
+            }
+            else
+            {
+                //actually add it to the background
+                utris_blit(board, buf, 8);
+                //it fit in the background, so get a new piece
+                pos.all = lastPos.all = INIT_POS;
+            }
         }
     }
     utris_blit(buf, board, 8);
-    display_set_buffer(buf);
-    scratchpad ^= 1;
 
-    //move the piece down 1 as our next command
-    lastPos.y = pos.y;
-    pos.y++;
+    //make any downward move, if needed
+    if (count-- != level)
+        return;
+    count = 0xFF;
+
+    utris_command(UTRIS_DOWN); //they could press the button before we loop again and "skip over" parts of the board by dropping a lastPos
 }
 
 void utris_command(UtrisCommand command)
 {
+    if (command == UTRIS_NONE)
+        return;
+
+    lastPos = pos;
+    switch (command)
+    {
+        case UTRIS_ROTATE:
+            pos.o++;
+            return;
+        case UTRIS_DOWN:
+            pos.y++;
+            return;
+        case UTRIS_LEFT:
+            pos.x--;
+            return;
+        case UTRIS_RIGHT:
+            pos.x++;
+            return;
+        default:
+            return;
+    }
 }
 

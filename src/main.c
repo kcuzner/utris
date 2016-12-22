@@ -22,29 +22,56 @@ FUSES = {
 #error "No fuses defined for selected processor"
 #endif
 
-#define FLAG_UTRIS_TICK 0x1
+#define FLAG_TICK 0x1
+//the bit order of the following masks is an optimization, they are the same order as the button resistor values
+#define FLAG_RIGHT 0x2
+#define FLAG_LEFT 0x4
+#define FLAG_ROTATE 0x8
+#define FLAG_DOWN 0x10
 
 static uint8_t flags;
+
+extern uint8_t display[2][8];;
 
 int main(void)
 {
     utris_init();
 
-    TCCR0A = 0;
-    TIMSK0 = (1<<TOIE0); //enable all interrupts for the timer
-    TCCR0B = (1<<CS02); //clock source is clk/256
-
     utris_start();
+
+    //set up clock for utris ticks
+    TCCR0A = 0;
+    TIMSK0 = _BV(TOIE0); //enable all interrupts for the timer
+    TCCR0B = _BV(CS02); //clock source is clk/256
+
+    //set up adc for input aquisition
+    ADMUX = _BV(ADLAR) | _BV(MUX1); //ADC2 (PB4) is our input
+    ADCSRB = 0; //free-running mode
+    DIDR0 = _BV(ADC2D); //disable digital buffer on PB4
+    ADCSRA = _BV(ADEN) | _BV(ADSC) | _BV(ADATE) | _BV(ADIE); //enabled, interrupts, start conversion, auto trigger
 
     sei();
 
     while(1)
     {
-        if (flags & FLAG_UTRIS_TICK)
-        {
+        cli();
+        UtrisCommand command = UTRIS_NONE;
+        if (flags & FLAG_RIGHT)
+            command = UTRIS_RIGHT;
+        else if (flags & FLAG_LEFT)
+            command = UTRIS_LEFT;
+        else if (flags & FLAG_ROTATE)
+            command = UTRIS_ROTATE;
+        else if (flags & FLAG_DOWN)
+            command = UTRIS_DOWN;
+        utris_command(command);
+
+        if (flags & FLAG_TICK)
             utris_tick();
-        }
+
         flags = 0;
+        sei();
+
         display_write_row();
     }
 
@@ -53,6 +80,34 @@ int main(void)
 
 ISR(TIM0_OVF_vect)
 {
-    flags |= FLAG_UTRIS_TICK;
+    flags |= FLAG_TICK;
+}
+
+#define BTN_INTERVAL (0x7F/5)
+ISR(ADC_vect)
+{
+    static uint8_t flagsMask = 0;
+    uint8_t val = ADCH >> 5;
+    if (val == 0x7)
+    {
+        flags |= flagsMask;
+        flagsMask = 0;
+    }
+    else if (val == 0x6)
+    {
+        flagsMask |= FLAG_DOWN;
+    }
+    else if (val == 0x4)
+    {
+        flagsMask |= FLAG_ROTATE;
+    }
+    else if (val == 0x1)
+    {
+        flagsMask |= FLAG_LEFT;
+    }
+    else if (val == 0x0)
+    {
+        flagsMask |= FLAG_RIGHT;
+    }
 }
 
